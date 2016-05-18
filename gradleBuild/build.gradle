@@ -1,0 +1,15 @@
+apply plugin: "jacoco"
+apply plugin: "org.sonarqube"
+
+System.getProperties().put("sonar.host.url", "http://localhost:9000")
+
+dependencies {
+    testCompile "junit:junit:4.12"
+}
+
+sonarqube {
+    properties {
+        property "sonar.projectName", "lab"
+        property "sonar.projectKey", "local:lab"
+    }
+}
