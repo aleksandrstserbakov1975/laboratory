@@ -2,6 +2,7 @@ apply plugin: "jacoco"
 apply plugin: "org.sonarqube"
 apply plugin: "distribution"
 apply plugin: "maven-publish"
+apply plugin: 'net.researchgate.release'
 
 apply from: "$rootDir/gradle/versioning.gradle"
 
@@ -64,8 +65,8 @@ publishing {
             name "remoteNexus" 
             url "http://smit.dev:8099/nexus/content/repositories/releases"
             credentials {
-                username "$nexusUser"
-                password "$nexusPassword"
+                username nexusUser
+                password nexusPassword
             }
         }
     }
