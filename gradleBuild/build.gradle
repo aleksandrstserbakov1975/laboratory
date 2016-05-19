@@ -1,18 +1,86 @@
+//
+// gradle deployWar - deploys war downloaded from Nexus
+// gradle publish - uploads to Nexus
+// gradle release - create new release to Vagrant's VM
+// gradle build jacoco sonarqube - compiles, tests, sends to Nagios
+// gradle vagrantUp/vagrantSuspend - creates VM for testing
+//
+
+
+import com.manning.gia.vm.Vagrant
+import com.manning.gia.ssh.Scp
+import com.manning.gia.ssh.SshExec
+import com.manning.gia.test.smoke.HttpSmokeTest
+
+
 apply plugin: "jacoco"
 apply plugin: "org.sonarqube"
 apply plugin: "distribution"
 apply plugin: "maven-publish"
 apply plugin: 'net.researchgate.release'
+apply plugin: "war"
 
+ext.artifactBaseName = "gradle-test"
+
+System.getProperties().put("sonar.host.url", "http://localhost:9000")
+
+
+//
+// loading config
+//
+def env = project.hasProperty('env') ? project.getProperty('env') : 'local'
+def configFile = file("gradle/config/buildConfig.groovy")
+def parsedConfig = new ConfigSlurper(env).parse(configFile.toURL())
+ext.config = parsedConfig
+
+
+//
+// automatic deploy
+//
+ext.downloadDir = file("$buildDir/download/artifacts")
+
+repositories { maven { url "http://smit.dev:8099/nexus/content/groups/public/" } }
+
+configurations { todo }
+
+dependencies {
+    todo group: rootProject.name, name: artifactBaseName, version: project.version.toString(), ext: "war"
+}
+
+task fetchWar(type: Copy) {
+    from configurations.todo
+    into downloadDir
+}
+
+//
+// automatic push of war onto server
+//
+configurations { jsch }
+
+dependencies { jsch "org.apache.ant:ant-jsch:1.9.+" }
+
+ext {
+    warFile = configurations.todo.singleFile
+    tomcatRemoteDir = "/opt/apache-tomcat-7.0.42/"
+
+    userHome = System.properties["user.home"]
+    vagrantKeyFile = file("$userHome/.vagrant.d/private.ppk")
+    remoteTmpDir = "$config.server.username@$config.server.hostname:/tmp"
+}
+
+
+task copyWarToServer(type: Scp, dependsOn: fetchWar) {
+    classpath = configurations.jsch
+    sourceFile = warFile
+    destination = remoteTmpDir
+    keyFile = vagrantKeyFile
+    port = config.server.sshPort
+}
 
 // this will create versions in form: major.minor.buildNumber (for example 1.1.123) for builds without snapshots
 // apply from: "$rootDir/gradle/versioning.gradle"
 
-System.getProperties().put("sonar.host.url", "http://localhost:9000")
-
-dependencies {
-    testCompile "junit:junit:4.12"
-}
+dependencies { testCompile "junit:junit:4.12" }
 
 sonarqube {
     properties {
@@ -20,8 +88,6 @@ sonarqube {
         property "sonar.projectKey", "local:lab"
     }
 }
-
-ext.artifactBaseName = "gradle-test"
 
 task sourceJar(type: Jar){
     baseName artifactBaseName
@@ -36,18 +102,14 @@ task docJar(type: Jar){
 }
 
 artifacts {
-    archives sourceJar 
+    archives sourceJar
     archives docJar
 }
 
 distributions {
     main {
         baseName = artifactBaseName
-        contents {
-            from {
-                libsDir
-            }
-        }
+        contents { from { libsDir } }
     }
 }
 
@@ -57,15 +119,16 @@ publishing {
         plugin(MavenPublication){
             from components.java
             artifactId artifactBaseName
-            
+
             artifact sourceJar
             artifact docJar
+            artifact war
         }
     }
     repositories {
         maven {
-            name "remoteNexus" 
-            url "http://smit.dev:8099/nexus/content/repositories/releases"
+            name "remoteNexus"
+            url project.version.contains("-SNAPSHOT") ? "http://smit.dev:8099/nexus/content/repositories/snapshots" : "http://smit.dev:8099/nexus/content/repositories/releases"
             credentials {
                 username nexusUser
                 password nexusPassword
@@ -73,3 +136,83 @@ publishing {
         }
     }
 }
+
+
+ext.targetedVagrantProjectDir = file(project.projectDir.absolutePath + "/vagrant-tomcat-box")
+
+task vagrantUp(type: Vagrant) {
+    commands = ['up']
+    dir = targetedVagrantProjectDir
+}
+task vagrantDestroy(type: Vagrant) {
+    commands = ['destroy', '--force']
+    dir = targetedVagrantProjectDir
+}
+task vagrantSshConfig(type: Vagrant) {
+    commands = ['ssh-config']
+    dir = targetedVagrantProjectDir
+}
+task vagrantStatus(type: Vagrant) {
+    commands = ['status']
+    dir = targetedVagrantProjectDir
+}
+task vagrantSuspend(type: Vagrant) {
+    commands = ['suspend']
+    dir = targetedVagrantProjectDir
+}
+task vagrantResume(type: Vagrant) {
+    commands = ['resume']
+    dir = targetedVagrantProjectDir
+}
+
+
+//
+// remote deploy
+//
+tasks.withType(SshExec) {
+    classpath = configurations.jsch
+    host = config.server.hostname
+    username = config.server.username
+    keyFile = vagrantKeyFile
+    port = config.server.sshPort
+}
+task shutdownTomcat(type: SshExec, dependsOn: copyWarToServer) {
+    command = "sudo -u tomcat $tomcatRemoteDir/bin/shutdown.sh"
+    doFirst { logger.quiet "Shutting down remote Tomcat." }
+}
+
+task deleteTomcatWebappsDir(type: SshExec, dependsOn: shutdownTomcat) { command = "sudo -u tomcat rm -rf $tomcatRemoteDir/webapps/todo" }
+task deleteTomcatWorkDir(type: SshExec, dependsOn: shutdownTomcat) { command = "sudo -u tomcat rm -rf $tomcatRemoteDir/work" }
+task deleteOldArtifacts(dependsOn: [deleteTomcatWebappsDir, deleteTomcatWorkDir]) {
+    doFirst { logger.quiet "Deleting old WAR artifacts." }
+}
+
+task copyWarToWebappsDir(type: SshExec, dependsOn: deleteOldArtifacts) {
+    command = "sudo -u tomcat cp /tmp/$warFile.name $tomcatRemoteDir/webapps/todo.war"
+    doFirst { logger.quiet "Deploying WAR file to Tomcat." }
+}
+
+task startupTomcat(type: SshExec, dependsOn: copyWarToWebappsDir) {
+    command = "sudo -u tomcat $tomcatRemoteDir/bin/startup.sh"
+    doFirst { logger.quiet "Starting up remote Tomcat." }
+}
+
+task deployWar(dependsOn: startupTomcat)
+
+
+//
+// Smoke test
+//
+ext {
+    tomcatUrl = "http://$config.tomcat.hostname:$config.tomcat.port"
+    toDoAppUrl = "$tomcatUrl/$config.tomcat.context"
+}
+task checkTomcatUrl(type: HttpSmokeTest) {
+    url = tomcatUrl
+    errorMessage = "Tomcat doesn't seem to be up."
+}
+task checkApplicationUrl(type: HttpSmokeTest, dependsOn: checkTomcatUrl) {
+    url = toDoAppUrl
+    errorMessage = "Application doesn't seem to be up."
+}
+task smokeTests(dependsOn: checkApplicationUrl)

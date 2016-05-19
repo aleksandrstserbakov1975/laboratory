@@ -7,7 +7,9 @@ buildscript {
     dependencies {
         classpath "org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:2.0.1"
         classpath 'net.researchgate:gradle-release:2.3.4'
+        
     }
+    
 }
 
 allprojects {
@@ -25,4 +27,7 @@ dependencies {
     compile localGroovy()
     compile gradleApi()
     compile project(":gradleBuild")
+    compile 'org.codehaus.groovy.modules.http-builder:http-builder:0.5.2'
 }
+
+  
