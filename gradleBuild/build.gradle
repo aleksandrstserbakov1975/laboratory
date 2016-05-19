@@ -54,7 +54,6 @@ publishing {
         plugin(MavenPublication){
             from components.java
             artifactId artifactBaseName
-            version "1.0"
             
             artifact sourceJar
             artifact docJar
@@ -65,8 +64,8 @@ publishing {
             name "remoteNexus" 
             url "http://smit.dev:8099/nexus/content/repositories/releases"
             credentials {
-                username nexusUser
-                password nexusPassword
+                username "$nexusUser"
+                password "$nexusPassword"
             }
         }
     }
