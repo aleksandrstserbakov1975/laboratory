@@ -4,7 +4,9 @@ apply plugin: "distribution"
 apply plugin: "maven-publish"
 apply plugin: 'net.researchgate.release'
 
-apply from: "$rootDir/gradle/versioning.gradle"
+
+// this will create versions in form: major.minor.buildNumber (for example 1.1.123) for builds without snapshots
+// apply from: "$rootDir/gradle/versioning.gradle"
 
 System.getProperties().put("sonar.host.url", "http://localhost:9000")
 
