@@ -24,4 +24,5 @@ allprojects {
 dependencies {
     compile localGroovy()
     compile gradleApi()
+    compile project(":gradleBuild")
 }
