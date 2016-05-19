@@ -1,5 +1,9 @@
 apply plugin: "jacoco"
 apply plugin: "org.sonarqube"
+apply plugin: "distribution"
+apply plugin: "maven-publish"
+
+apply from: "$rootDir/gradle/versioning.gradle"
 
 System.getProperties().put("sonar.host.url", "http://localhost:9000")
 
@@ -11,5 +15,59 @@ sonarqube {
     properties {
         property "sonar.projectName", "lab"
         property "sonar.projectKey", "local:lab"
+    }
+}
+
+ext.artifactBaseName = "gradle-test"
+
+task sourceJar(type: Jar){
+    baseName artifactBaseName
+    from sourceSets.main.allSource
+    classifier "sources"
+}
+
+task docJar(type: Jar){
+    baseName artifactBaseName
+    from javadoc
+    classifier "docs"
+}
+
+artifacts {
+    archives sourceJar 
+    archives docJar
+}
+
+distributions {
+    main {
+        baseName = artifactBaseName
+        contents {
+            from {
+                libsDir
+            }
+        }
+    }
+}
+
+// gradle publish or publishToMavenLocal
+publishing {
+    publications {
+        plugin(MavenPublication){
+            from components.java
+            artifactId artifactBaseName
+            version "1.0"
+            
+            artifact sourceJar
+            artifact docJar
+        }
+    }
+    repositories {
+        maven {
+            name "remoteNexus" 
+            url "http://smit.dev:8099/nexus/content/repositories/releases"
+            credentials {
+                username nexusUser
+                password nexusPassword
+            }
+        }
     }
 }

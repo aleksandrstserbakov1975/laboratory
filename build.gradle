@@ -19,3 +19,8 @@ allprojects {
     }
 }
 
+
+dependencies {
+    compile localGroovy()
+    compile gradleApi()
+}

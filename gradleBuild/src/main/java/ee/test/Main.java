@@ -1,7 +1,16 @@
 package ee.test;
 
+/**
+ * This is some doc
+ * @author aleksandr.stserbakov
+ *
+ */
 public class Main {
 
+    /**
+     * Main method
+     * @param args
+     */
     public static void main(String[] args){
         String person = "World";
         
